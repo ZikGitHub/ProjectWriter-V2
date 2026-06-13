@@ -9,6 +9,7 @@ app = FastAPI(title="ProjectWriter-V2 API Gateway")
 state_manager = StateManager(state_dir="./generated_project")
 planner = Planner()
 orchestrator = Orchestrator(state_manager)
+# ...
 
 @app.on_event("startup")
 async def startup_event():

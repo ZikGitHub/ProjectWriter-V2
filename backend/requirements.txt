@@ -6,3 +6,5 @@ httpx
 python-multipart
 astor
 watchfiles
+langgraph
+langchain-core
