@@ -15,13 +15,13 @@ class Coder:
 
     async def write_file(self, task: ProjectTask, context: str) -> str:
         prompt = f"""
-        You are an expert software engineer. Your task is to write high-quality, production-ready code for the following task.
+        You are an expert software engineer. Your task is to write high-quality, production-ready Python code for the following task.
         
         Task Description: {task.description}
         Domain: {task.domain}
         Context (Previous tasks/contracts): {context}
         
-        Respond ONLY with the complete source code. Do not include markdown blocks or explanations.
+        Respond ONLY with the complete Python source code. Do not include markdown blocks or explanations.
         """
         
         response = await self.client.post("/api/generate", json={
@@ -32,14 +32,15 @@ class Coder:
         
         if response.status_code == 200:
             code = response.json()["response"].strip()
-            # Remove potential markdown code blocks if the model included them anyway
-            if code.startswith("```"):
-                lines = code.split("\n")
-                if lines[0].startswith("```"):
-                    lines = lines[1:]
-                if lines[-1].startswith("```"):
-                    lines = lines[:-1]
-                code = "\n".join(lines).strip()
+            
+            # Robust code extraction
+            import re
+            code_block_match = re.search(r"```(?:\w+)?\n(.*?)\n```", code, re.DOTALL)
+            if code_block_match:
+                code = code_block_match.group(1).strip()
+            else:
+                # Fallback: if no blocks but has backticks, try to strip them
+                code = code.replace("```", "").strip()
             
             # Determine file path if not provided
             if not task.file_path:

@@ -18,10 +18,12 @@ class Planner:
         
         User Request: {user_request}
         
+        IMPORTANT: Do NOT simply repeat the example tasks below. Analyze the User Request carefully and provide a tailored plan.
+        
         Respond ONLY with a JSON list of tasks in the following format:
         [
-          {{"id": "task_1", "domain": "db", "description": "Create user schema", "requires": [], "provides": ["user_model"]}},
-          {{"id": "task_2", "domain": "api", "description": "Create login endpoint", "requires": ["task_1"], "provides": ["login_api"]}}
+          {{"id": "task_1", "domain": "db", "description": "Create specific database schema for this request", "requires": [], "provides": ["model_name"]}},
+          {{"id": "task_2", "domain": "api", "description": "Create specific endpoint related to the request", "requires": ["task_1"], "provides": ["api_name"]}}
         ]
         """
         
@@ -35,6 +37,14 @@ class Planner:
         if response.status_code == 200:
             result = response.json()
             tasks_data = json.loads(result["response"])
+            
+            # Handle different JSON formats from LLM
+            if isinstance(tasks_data, dict) and "tasks" in tasks_data:
+                tasks_data = tasks_data["tasks"]
+            
+            if not isinstance(tasks_data, list):
+                raise Exception(f"Unexpected JSON format from Planner: {tasks_data}")
+
             return [ProjectTask(**task) for task in tasks_data]
         else:
             raise Exception(f"Failed to communicate with Ollama: {response.text}")

@@ -55,7 +55,7 @@ class Orchestrator:
             is_valid = await self.coder.validate_syntax(task.file_path)
             
             if is_valid:
-                self.state_manager.update_task(task.id, status=TaskStatus.COMPLETED)
+                self.state_manager.update_task(task.id, status=TaskStatus.COMPLETED, file_path=task.file_path)
             else:
                 self.state_manager.update_task(task.id, status=TaskStatus.FAILED, error="Syntax validation failed")
                 
