@@ -26,10 +26,10 @@ class ProjectTask(BaseModel):
     file_path: Optional[str] = None
     error: Optional[str] = None
 
-class ProjectState(TypedDict):
-    project_name: str
-    version: str
-    tasks: Annotated[List[ProjectTask], operator.add]
-    completed_files: Annotated[List[str], operator.add]
-    updates: Annotated[List[TaskState], operator.add]
-    metadata: Dict[str, Any]
+class ProjectState(BaseModel):
+    project_name: str = "New Project"
+    version: str = "0.0.1"
+    tasks: List[ProjectTask] = []
+    completed_files: List[str] = []
+    updates: List[TaskState] = []
+    metadata: Dict[str, Any] = {}

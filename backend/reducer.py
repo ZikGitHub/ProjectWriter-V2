@@ -1,19 +1,22 @@
 from typing import List, Dict, Any
 from models import ProjectState, TaskState, TaskStatus
+from logger_config import get_logger
+
+logger = get_logger(__name__)
 
 def reducer_node(state: ProjectState, updates: List[TaskState] = None) -> Dict[str, Any]:
     """
     Processes updates from the task execution and updates the state.
     """
-    print("DEBUG: Reducer node running.")
+    logger.debug("Reducer node running.")
     # Use provided updates or extract from state
     actual_updates = updates if updates is not None else state.get("updates", [])
     
     if not actual_updates:
-        print("DEBUG: No updates.")
+        logger.debug("No updates received.")
         return {}
     
-    print(f"DEBUG: Updates count: {len(actual_updates)}")
+    logger.info(f"Processing {len(actual_updates)} updates.")
 
     # Update tasks based on the updates channel
     tasks = state.get("tasks", [])
@@ -29,11 +32,11 @@ def reducer_node(state: ProjectState, updates: List[TaskState] = None) -> Dict[s
                 task["file_path"] = update["file_path"]
                 if task.get("id") not in completed_files:
                     completed_files.append(task.get("id"))
-                print(f"DEBUG: Task {task.get('id')} marked completed.")
+                logger.info(f"Task {task.get('id')} marked completed.")
             else:
                 task["status"] = TaskStatus.FAILED
                 task["error"] = "Code generation or validation failed."
-                print(f"DEBUG: Task {task.get('id')} marked failed.")
+                logger.error(f"Task {task.get('id')} marked failed.")
                 
     # Return the updates to the state
     return {

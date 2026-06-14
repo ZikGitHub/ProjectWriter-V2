@@ -1,13 +1,16 @@
 from typing import List, Dict, Any
 from langgraph.types import Send
 from models import TaskState, ProjectTask, TaskStatus, ProjectState
+from logger_config import get_logger
+
+logger = get_logger(__name__)
 
 def dispatcher_node(state: Dict[str, Any]) -> Dict[str, Any]:
-    print("DEBUG: Dispatcher node running.")
+    logger.debug("Dispatcher node running.")
     tasks = state.get("tasks", [])
     completed_files: List[str] = state.get("completed_files", [])
-    print(f"DEBUG: Tasks: {tasks}")
-    print(f"DEBUG: Completed files: {completed_files}")
+    logger.debug(f"Tasks: {tasks}")
+    logger.debug(f"Completed files: {completed_files}")
     
     # Identify tasks that are PENDING and have all dependencies met
     ready_tasks = [
@@ -15,7 +18,7 @@ def dispatcher_node(state: Dict[str, Any]) -> Dict[str, Any]:
         if (task.get("status") if isinstance(task, dict) else task.status) == TaskStatus.PENDING and
         all(dep_id in completed_files for dep_id in (task.get("requires", []) if isinstance(task, dict) else task.requires))
     ]
-    print(f"DEBUG: Ready tasks count: {len(ready_tasks)}")
+    logger.info(f"Ready tasks identified: {len(ready_tasks)}")
 
     # Return as a dictionary that LangGraph understands as a command for edges
     return {
