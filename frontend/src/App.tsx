@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { getProjectState, initializeProject, generatePlan, executeTasks } from './api'
-import './App.css'
+import './index.css'
 
 function App() {
   const [state, setState] = useState<any>(null)
