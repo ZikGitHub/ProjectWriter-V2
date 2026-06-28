@@ -1,5 +1,9 @@
 from pydantic import BaseModel, Field
-from typing import List, Dict, Optional, Any, TypedDict, Annotated
+from typing import List, Dict, Optional, Any, Annotated
+try:
+    from typing_extensions import TypedDict
+except ImportError:
+    from typing import TypedDict
 import operator
 from enum import Enum
 
@@ -31,5 +35,5 @@ class ProjectState(BaseModel):
     version: str = "0.0.1"
     tasks: List[ProjectTask] = []
     completed_files: List[str] = []
-    updates: List[TaskState] = []
+    updates: Annotated[List[TaskState], operator.add] = []
     metadata: Dict[str, Any] = {}

@@ -2,7 +2,7 @@ from fastapi import FastAPI, BackgroundTasks, HTTPException
 from models import ProjectState, ProjectTask
 from state_manager import StateManager
 from planner import Planner
-from orchestrator import Orchestrator
+from orchestrator_v2 import Orchestrator
 from logger_config import setup_logging, get_logger
 import os
 
@@ -12,15 +12,15 @@ logger = get_logger(__name__)
 
 app = FastAPI(title="ProjectWriter-V2 API Gateway")
 logger.info("API Gateway starting up...")
-state_manager = StateManager(state_dir="./generated_project")
+state_manager = StateManager(base_dir="./workspace")
 planner = Planner()
 orchestrator = Orchestrator(state_manager)
 # ...
 
 @app.on_event("startup")
 async def startup_event():
-    if not os.path.exists("./generated_project"):
-        os.makedirs("./generated_project")
+    if not os.path.exists("./workspace"):
+        os.makedirs("./workspace")
     state_manager.load_state()
 
 @app.get("/")
@@ -34,10 +34,9 @@ async def get_state():
 @app.post("/initialize")
 async def initialize_project(project_name: str):
     logger.info(f"Initializing project: {project_name}")
+    project_id = state_manager.set_project(project_name)
     state = state_manager.load_state()
-    state.project_name = project_name
-    state_manager.save_state()
-    return {"message": f"Project {project_name} initialized", "state": state}
+    return {"message": f"Project {project_name} initialized", "project_id": project_id, "state": state}
 
 @app.post("/plan")
 async def generate_plan(user_request: str):

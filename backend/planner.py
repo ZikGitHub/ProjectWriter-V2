@@ -1,5 +1,6 @@
 import httpx
 import os
+import asyncio
 from typing import List, Dict, Any
 from models import ProjectTask, TaskStatus
 from logger_config import get_logger
@@ -12,7 +13,7 @@ PLANNER_MODEL = "llama3.2:1b"
 
 class Planner:
     def __init__(self):
-        self.client = httpx.AsyncClient(base_url=OLLAMA_BASE_URL, timeout=60.0)
+        self.client = httpx.AsyncClient(base_url=OLLAMA_BASE_URL, timeout=None)
         logger.info(f"Planner initialized using model {PLANNER_MODEL}")
 
     async def decompose_request(self, user_request: str) -> List[ProjectTask]:
@@ -32,34 +33,42 @@ class Planner:
         ]
         """
         
-        try:
-            response = await self.client.post("/api/generate", json={
-                "model": PLANNER_MODEL,
-                "prompt": prompt,
-                "stream": False,
-                "format": "json"
-            })
-            
-            if response.status_code == 200:
-                result = response.json()
-                tasks_data = json.loads(result["response"])
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
+            try:
+                logger.info(f"Attempt {attempt} of {max_retries} to contact Ollama...")
+                response = await self.client.post("/api/generate", json={
+                    "model": PLANNER_MODEL,
+                    "prompt": prompt,
+                    "stream": False,
+                    "format": "json"
+                })
                 
-                # Handle different JSON formats from LLM
-                if isinstance(tasks_data, dict) and "tasks" in tasks_data:
-                    tasks_data = tasks_data["tasks"]
-                
-                if not isinstance(tasks_data, list):
-                    logger.error(f"Unexpected JSON format from Planner: {tasks_data}")
-                    raise Exception(f"Unexpected JSON format from Planner: {tasks_data}")
+                if response.status_code == 200:
+                    result = response.json()
+                    tasks_data = json.loads(result["response"])
+                    
+                    # Handle different JSON formats from LLM
+                    if isinstance(tasks_data, dict) and "tasks" in tasks_data:
+                        tasks_data = tasks_data["tasks"]
+                    
+                    if not isinstance(tasks_data, list):
+                        logger.error(f"Unexpected JSON format from Planner: {tasks_data}")
+                        raise Exception(f"Unexpected JSON format from Planner: {tasks_data}")
 
-                logger.info(f"Successfully decomposed request into {len(tasks_data)} tasks.")
-                return [ProjectTask(**task) for task in tasks_data]
-            else:
-                logger.error(f"Failed to communicate with Ollama: {response.text}")
-                raise Exception(f"Failed to communicate with Ollama: {response.text}")
-        except Exception as e:
-            logger.error(f"Exception during request decomposition: {str(e)}")
-            raise
+                    logger.info(f"Successfully decomposed request into {len(tasks_data)} tasks.")
+                    return [ProjectTask(**task) for task in tasks_data]
+                else:
+                    logger.error(f"Failed to communicate with Ollama: {response.text}")
+                    raise Exception(f"Failed to communicate with Ollama: {response.text}")
+            except Exception as e:
+                logger.error(f"Exception during request decomposition (attempt {attempt}): {str(e)}")
+                if attempt < max_retries:
+                    wait = 2 ** attempt  # exponential backoff: 2s, 4s
+                    logger.info(f"Retrying in {wait}s...")
+                    await asyncio.sleep(wait)
+                else:
+                    raise
 
     def resolve_dependencies(self, tasks: List[ProjectTask]) -> List[ProjectTask]:
         # Simple topological sort or just return for now as the LLM provides 'requires'

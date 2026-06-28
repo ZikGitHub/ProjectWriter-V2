@@ -37,61 +37,109 @@ class Orchestrator:
         return workflow.compile()
 
     def route_tasks(self, state: ProjectState):
-        tasks = state.get("tasks", [])
-        if not any(t.get("status") == TaskStatus.PENDING for t in tasks):
-            logger.info("No more pending tasks. Routing to END.")
-            return END
-        return "execute_node"
+        logger.debug(f"Routing tasks in Orchestrator V2. State: {state}")
+        # Support both dict and Pydantic model state
+        tasks = state.tasks if hasattr(state, 'tasks') else state.get("tasks", [])
+        completed_files = state.completed_files if hasattr(state, 'completed_files') else state.get("completed_files", [])
+        
+        # Identify ready tasks (status is PENDING and all dependency task IDs are in completed_files)
+        ready_tasks = []
+        for task in tasks:
+            is_dict = isinstance(task, dict)
+            status = task.get("status") if is_dict else task.status
+            requires = task.get("requires", []) if is_dict else task.requires
+            
+            if status == TaskStatus.PENDING and all(dep_id in completed_files for dep_id in requires):
+                ready_tasks.append(task)
+                
+        if not ready_tasks:
+            # If no tasks are pending or in progress, we are done
+            pending_or_running = [
+                t for t in tasks 
+                if (t.get("status") if isinstance(t, dict) else t.status) in [TaskStatus.PENDING, TaskStatus.IN_PROGRESS]
+            ]
+            if not pending_or_running:
+                logger.info("No pending or in-progress tasks. Routing to END.")
+                return END
+            else:
+                logger.info("No ready tasks, but pending/in-progress tasks exist. Routing to END to avoid deadlock.")
+                return END
+                
+        logger.info(f"Routing {len(ready_tasks)} tasks to execute_node.")
+        return [
+            Send("execute_node", TaskState(
+                id=task.get("id") if isinstance(task, dict) else task.id,
+                file_path=(task.get("file_path") if isinstance(task, dict) else task.file_path) or f"{(task.get('domain') if isinstance(task, dict) else task.domain)}/{(task.get('id') if isinstance(task, dict) else task.id)}.py",
+                instruction=task.get("description") if isinstance(task, dict) else task.description,
+                target_model="qwen2.5-coder:1.5b",
+                current_code=None
+            ))
+            for task in ready_tasks
+        ]
 
     async def run_execution_loop(self):
-        logger.info("Starting V2 execution loop.")
-        # pydantic_state is actually a dict from StateManager
-        pydantic_state = self.state_manager.load_state()
+        logger.info("Starting Orchestrator V2 execution loop via LangGraph.")
+        state = self.state_manager.load_state()
         
-        # Ensure it's a dict
-        if hasattr(pydantic_state, 'model_dump'):
-            # It's a Pydantic object
-            state_dict = pydantic_state.model_dump()
-        else:
-            # It's a dict
-            state_dict = pydantic_state
-
-        initial_state = {
-            "project_name": state_dict.get("project_name", "Unknown"),
-            "version": state_dict.get("version", "2.0"),
-            "tasks": state_dict.get("tasks", []),
-            "completed_files": state_dict.get("completed_files", []),
-            "updates": [],
-            "metadata": state_dict.get("metadata", {})
-        }
-        await self.graph.ainvoke(initial_state, {"recursion_limit": 50})
+        try:
+            # Invoke the LangGraph workflow
+            logger.info("Invoking LangGraph workflow...")
+            final_state = await self.graph.ainvoke(state)
+            
+            # Update state with tasks and completed_files from the run
+            if hasattr(final_state, 'tasks'):
+                state.tasks = final_state.tasks
+                state.completed_files = final_state.completed_files
+                state.updates = final_state.updates
+            elif isinstance(final_state, dict):
+                state.tasks = [ProjectTask(**t) if isinstance(t, dict) else t for t in final_state.get("tasks", [])]
+                state.completed_files = final_state.get("completed_files", [])
+                state.updates = final_state.get("updates", [])
+            
+            # Save the final state back to disk
+            self.state_manager.save_state()
+            logger.info("Orchestrator V2 loop completed successfully.")
+        except Exception as e:
+            logger.error(f"Error during V2 execution loop: {str(e)}")
+            raise
 
     async def execute_task(self, task_state: TaskState):
-        # Retrieve task info from state manager based on ID
         task_id = task_state.get("id")
-        logger.info(f"V2 executing task: {task_id}")
-        if not task_id:
-            logger.warning("No task ID provided in task state.")
-            return {"updates": [task_state]}
-            
-        task = next((t for t in self.state_manager.load_state().tasks if t.id == task_id), None)
-        if not task:
-            logger.error(f"Task {task_id} not found in state.")
-            return {"updates": [task_state]}
-            
+        file_path = task_state.get("file_path")
+        instruction = task_state.get("instruction")
+        domain = file_path.split("/")[0] if "/" in file_path else "api"
+        
+        logger.info(f"Executing task in Orchestrator V2: {task_id} ({file_path})")
+        
+        # Instantiate a ProjectTask to pass to Coder (which expects a ProjectTask object)
+        task = ProjectTask(
+            id=task_id,
+            domain=domain,
+            description=instruction,
+            file_path=file_path,
+            status=TaskStatus.IN_PROGRESS
+        )
+        
         try:
-            context = "Focus on modularity and clear interfaces."
-            code = await self.coder.write_file(task, context)
-            is_valid = await self.coder.validate_syntax(task.file_path)
+            # Gather context
+            context = "Focus on modularity, high quality, and clear interfaces."
+            
+            # Write file using Coder
+            code = await self.coder.write_file(task, context, state_dir=self.state_dir)
+            
+            # Validate syntax
+            is_valid = await self.coder.validate_syntax(file_path, state_dir=self.state_dir)
             
             if is_valid:
-                logger.info(f"Task {task_id} code generated and validated.")
+                logger.info(f"Task {task_id} code generation and syntax validation completed successfully.")
                 task_state["current_code"] = code
             else:
                 logger.error(f"Task {task_id} syntax validation failed.")
                 task_state["current_code"] = None
+                
         except Exception as e:
-            logger.error(f"Error in execute_task for {task_id}: {str(e)}")
+            logger.error(f"Error executing task {task_id}: {str(e)}")
             task_state["current_code"] = None
             
         return {"updates": [task_state]}
+

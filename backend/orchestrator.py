@@ -15,18 +15,9 @@ class Orchestrator:
 
     async def run_execution_loop(self):
         logger.info("Starting execution loop.")
-        # State is a dict
+        # state is a ProjectState object
         state = self.state_manager.load_state()
-        
-        # Access as dict
-        tasks_data = state.get("tasks", [])
-        completed_files = state.get("completed_files", [])
-        
-        # We need task objects... but we have dicts.
-        # Let's recreate them if needed, or update the logic to handle dicts.
-        # The simplest is to use pydantic to parse them back.
-        from models import ProjectTask
-        tasks = [ProjectTask(**t) if isinstance(t, dict) else t for t in tasks_data]
+        tasks = state.tasks
         
         while True:
             # 1. Identify tasks ready to run
@@ -45,8 +36,7 @@ class Orchestrator:
                 logger.debug("No ready tasks, waiting...")
                 await asyncio.sleep(2) # Wait for other tasks to complete
                 state = self.state_manager.load_state()
-                tasks_data = state.get("tasks", [])
-                tasks = [ProjectTask(**t) if isinstance(t, dict) else t for t in tasks_data]
+                tasks = state.tasks
                 continue
 
             logger.info(f"Executing {len(ready_tasks)} ready tasks.")
@@ -56,8 +46,7 @@ class Orchestrator:
             
             # Refresh state
             state = self.state_manager.load_state()
-            tasks_data = state.get("tasks", [])
-            tasks = [ProjectTask(**t) if isinstance(t, dict) else t for t in tasks_data]
+            tasks = state.tasks
 
     async def execute_task(self, task: ProjectTask):
         logger.info(f"Executing task: {task.id} ({task.file_path})")
@@ -67,10 +56,12 @@ class Orchestrator:
             # Gather context from previous tasks if needed
             context = "Focus on modularity and clear interfaces."
             
-            code = await self.coder.write_file(task, context)
+            # Pass the current state_dir from state_manager
+            state_dir = self.state_manager.state_dir
+            code = await self.coder.write_file(task, context, state_dir=state_dir)
             
             # Validate syntax
-            is_valid = await self.coder.validate_syntax(task.file_path)
+            is_valid = await self.coder.validate_syntax(task.file_path, state_dir=state_dir)
             
             if is_valid:
                 logger.info(f"Task {task.id} completed successfully.")

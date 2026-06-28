@@ -8,3 +8,4 @@ astor
 watchfiles
 langgraph
 langchain-core
+typing-extensions

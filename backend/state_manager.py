@@ -1,5 +1,7 @@
 import json
 import os
+import time
+import re
 from models import ProjectState, ProjectTask, TaskStatus
 from typing import Optional
 from logger_config import get_logger
@@ -9,11 +11,29 @@ logger = get_logger(__name__)
 STATE_FILE = "state.json"
 
 class StateManager:
-    def __init__(self, state_dir: str = "."):
-        self.state_dir = state_dir
-        self.state_path = os.path.join(state_dir, STATE_FILE)
+    def __init__(self, base_dir: str = "./workspace"):
+        self.base_dir = base_dir
+        self.state_dir = os.path.join(base_dir, "default")
+        self.state_path = os.path.join(self.state_dir, STATE_FILE)
         self.state: Optional[ProjectState] = None
-        logger.info(f"StateManager initialized with path: {self.state_path}")
+        logger.info(f"StateManager initialized with base_dir: {self.base_dir}")
+
+    def set_project(self, project_name: str) -> str:
+        # Create a unique project ID
+        slug = re.sub(r'[^a-z0-9]', '_', project_name.lower())
+        timestamp = int(time.time())
+        project_id = f"{slug}_{timestamp}"
+        
+        self.state_dir = os.path.join(self.base_dir, project_id)
+        self.state_path = os.path.join(self.state_dir, STATE_FILE)
+        
+        os.makedirs(self.state_dir, exist_ok=True)
+        
+        self.state = ProjectState(project_name=project_name)
+        self.save_state()
+        
+        logger.info(f"Project set to: {project_id} at {self.state_dir}")
+        return project_id
 
     def load_state(self) -> ProjectState:
         if os.path.exists(self.state_path):

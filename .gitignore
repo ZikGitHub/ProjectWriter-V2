@@ -40,6 +40,10 @@ dist/
 ollama_data/
 redis_data/
 generated_project/
+workspace/
+backend/workspace/
+test_workspace/
+test_*_workspace/
 
 # OS
 .DS_Store
